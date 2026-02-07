@@ -54,6 +54,15 @@
 
     <!-- Main feed screen -->
     <div id="feed-screen" class="screen hidden">
+      <!-- Tab bar: New / Watched -->
+      <div class="tab-bar">
+        <button class="tab active" data-tab="new">New</button>
+        <button class="tab" data-tab="watched">Watched</button>
+      </div>
+
+      <!-- Tag filter bar -->
+      <div id="tag-filter-bar" class="tag-filter-bar hidden"></div>
+
       <!-- Empty state -->
       <div id="empty-state" class="empty-state hidden">
         <div class="empty-icon">📡</div>
@@ -116,9 +125,9 @@
           </section>
 
           <section class="settings-section">
-            <h3>Filter Shorts</h3>
+            <h3>Filter Short Videos</h3>
             <label class="toggle-label">
-              <span>Hide videos under 60 seconds</span>
+              <span>Hide videos under 5 minutes</span>
               <input type="checkbox" id="filter-shorts" checked>
               <span class="toggle-slider"></span>
             </label>
