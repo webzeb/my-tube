@@ -677,6 +677,37 @@ a:hover {
   font-size: 0.9rem;
 }
 
+/* Sync / export / import */
+.settings-desc {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: 12px;
+}
+
+.sync-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.secondary-btn {
+  padding: 10px 16px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.secondary-btn:hover {
+  background: var(--surface-hover);
+  border-color: var(--accent);
+}
+
 /* Settings sections */
 .settings-section {
   margin-bottom: 28px;

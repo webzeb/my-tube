@@ -141,7 +141,7 @@
     return details.items || [];
   }
 
-  async function fetchChannelVideos(channel, maxResults = 10) {
+  async function fetchChannelVideos(channel, maxResults = 50) {
     const playlistId = channel.uploadsPlaylistId;
     const data = await ytFetch('playlistItems', {
       part: 'snippet',
@@ -600,8 +600,104 @@
     });
   }
 
+  // --- Sync / Export / Import ---
+  function getSettingsPayload() {
+    return {
+      apiKey,
+      channels,
+      filterShorts,
+      watchedIds: Array.from(watchedIds),
+    };
+  }
+
+  function applySettingsPayload(data) {
+    if (data.apiKey) {
+      apiKey = data.apiKey;
+      store(STORAGE_KEYS.API_KEY, apiKey);
+    }
+    if (data.channels) {
+      channels = data.channels;
+      store(STORAGE_KEYS.CHANNELS, channels);
+    }
+    if (typeof data.filterShorts === 'boolean') {
+      filterShorts = data.filterShorts;
+      store(STORAGE_KEYS.FILTER_SHORTS, filterShorts);
+    }
+    if (data.watchedIds) {
+      watchedIds = new Set(data.watchedIds);
+      store(STORAGE_KEYS.WATCHED_IDS, data.watchedIds);
+    }
+    // Clear video cache so we re-fetch
+    store(STORAGE_KEYS.VIDEO_CACHE, null);
+    store(STORAGE_KEYS.CACHE_TIME, 0);
+    cachedVideos = [];
+  }
+
+  function generateSyncLink() {
+    const payload = getSettingsPayload();
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+    const url = new URL(window.location.href);
+    url.hash = '';
+    url.search = '';
+    url.hash = 'sync=' + encoded;
+    return url.toString();
+  }
+
+  function checkSyncFromUrl() {
+    const hash = window.location.hash;
+    if (!hash.startsWith('#sync=')) return false;
+    try {
+      const encoded = hash.slice(6);
+      const json = decodeURIComponent(escape(atob(encoded)));
+      const data = JSON.parse(json);
+      applySettingsPayload(data);
+      // Clean up URL
+      history.replaceState(null, '', window.location.pathname);
+      showToast('Settings synced from link!');
+      return true;
+    } catch {
+      showToast('Invalid sync link');
+      return false;
+    }
+  }
+
+  function exportSettings() {
+    const payload = getSettingsPayload();
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: 'application/json',
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mytube-settings.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Settings exported');
+  }
+
+  function importSettings(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        applySettingsPayload(data);
+        showScreen();
+        renderTagFilterBar();
+        if (apiKey && channels.length > 0) {
+          loadFeed(false);
+        }
+        showToast('Settings imported!');
+      } catch {
+        showToast('Invalid settings file');
+      }
+    };
+    reader.readAsText(file);
+  }
+
   // --- Event handlers ---
   function init() {
+    // Check for sync data in URL
+    const synced = checkSyncFromUrl();
     // Setup screen
     $('#setup-save-btn').addEventListener('click', () => {
       const key = $('#setup-api-key').value.trim();
@@ -646,6 +742,31 @@
       filterShorts = filterShortsToggle.checked;
       store(STORAGE_KEYS.FILTER_SHORTS, filterShorts);
       applyFiltersAndRender();
+    });
+
+    // Sync / Export / Import
+    $('#copy-sync-link').addEventListener('click', () => {
+      const link = generateSyncLink();
+      navigator.clipboard.writeText(link).then(
+        () => showToast('Sync link copied! Open it on your other device.'),
+        () => {
+          // Fallback for older browsers
+          prompt('Copy this link:', link);
+        }
+      );
+    });
+
+    $('#export-settings').addEventListener('click', exportSettings);
+
+    const importFileInput = $('#import-file-input');
+    $('#import-settings').addEventListener('click', () => {
+      importFileInput.click();
+    });
+    importFileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) {
+        importSettings(e.target.files[0]);
+        e.target.value = '';
+      }
     });
 
     // Tab switching
@@ -779,7 +900,7 @@
     showScreen();
     if (apiKey && channels.length > 0) {
       renderTagFilterBar();
-      loadFeed(true);
+      loadFeed(synced ? false : true);
     }
   }
 
