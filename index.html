@@ -134,6 +134,17 @@
           </section>
 
           <section class="settings-section">
+            <h3>Sync Across Devices</h3>
+            <p class="settings-desc">Copy a sync link to open on another device, or export/import your settings as a file.</p>
+            <div class="sync-actions">
+              <button id="copy-sync-link" class="secondary-btn">Copy Sync Link</button>
+              <button id="export-settings" class="secondary-btn">Export File</button>
+              <button id="import-settings" class="secondary-btn">Import File</button>
+              <input type="file" id="import-file-input" accept=".json" class="hidden">
+            </div>
+          </section>
+
+          <section class="settings-section">
             <h3>Your Channels</h3>
             <div id="channel-list" class="channel-list"></div>
           </section>
