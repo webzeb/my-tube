@@ -10,6 +10,7 @@
     FILTER_SHORTS: 'mytube_filter_shorts',
     VIDEO_CACHE: 'mytube_video_cache',
     CACHE_TIME: 'mytube_cache_time',
+    WATCHED_IDS: 'mytube_watched_ids',
   };
 
   function store(key, value) {
@@ -28,8 +29,12 @@
   // --- State ---
   let apiKey = load(STORAGE_KEYS.API_KEY, '');
   let channels = load(STORAGE_KEYS.CHANNELS, []);
-  // channels: [{ id, title, thumbnail, uploadsPlaylistId }]
+  // channels: [{ id, title, thumbnail, uploadsPlaylistId, tags: string[] }]
   let filterShorts = load(STORAGE_KEYS.FILTER_SHORTS, true);
+  let watchedIds = new Set(load(STORAGE_KEYS.WATCHED_IDS, []));
+  let activeTab = 'new'; // 'new' or 'watched'
+  let activeTag = 'all'; // 'all' or a specific tag string
+  let cachedVideos = []; // in-memory copy for re-filtering without API calls
 
   // --- DOM refs ---
   const $ = (sel) => document.querySelector(sel);
@@ -46,6 +51,7 @@
   const filterShortsToggle = $('#filter-shorts');
   const settingsApiKeyInput = $('#settings-api-key');
   const refreshBtn = $('#refresh-btn');
+  const tagFilterBar = $('#tag-filter-bar');
 
   // --- YouTube API ---
   const API_BASE = 'https://www.googleapis.com/youtube/v3';
@@ -112,7 +118,6 @@
         if (data.items?.length) return data.items;
       }
       if (customName) {
-        // Fall through to search with custom name
         query = customName;
       }
     }
@@ -217,6 +222,59 @@
     return `${n} subscribers`;
   }
 
+  // --- Tags ---
+  function getAllTags() {
+    const tagSet = new Set();
+    channels.forEach((ch) => {
+      (ch.tags || []).forEach((t) => tagSet.add(t));
+    });
+    return Array.from(tagSet).sort();
+  }
+
+  function getChannelIdsByTag(tag) {
+    if (tag === 'all') return null; // no filter
+    return new Set(
+      channels.filter((ch) => (ch.tags || []).includes(tag)).map((ch) => ch.id)
+    );
+  }
+
+  function renderTagFilterBar() {
+    const allTags = getAllTags();
+    if (allTags.length === 0) {
+      tagFilterBar.classList.add('hidden');
+      activeTag = 'all';
+      return;
+    }
+    tagFilterBar.classList.remove('hidden');
+    tagFilterBar.innerHTML = '';
+
+    const makeTagPill = (label, value) => {
+      const btn = document.createElement('button');
+      btn.className = `tag-pill${activeTag === value ? ' active' : ''}`;
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        activeTag = value;
+        renderTagFilterBar();
+        applyFiltersAndRender();
+      });
+      return btn;
+    };
+
+    tagFilterBar.appendChild(makeTagPill('All', 'all'));
+    allTags.forEach((tag) => tagFilterBar.appendChild(makeTagPill(tag, tag)));
+  }
+
+  // --- Watched ---
+  function markWatched(videoId) {
+    watchedIds.add(videoId);
+    store(STORAGE_KEYS.WATCHED_IDS, Array.from(watchedIds));
+  }
+
+  function markUnwatched(videoId) {
+    watchedIds.delete(videoId);
+    store(STORAGE_KEYS.WATCHED_IDS, Array.from(watchedIds));
+  }
+
   // --- UI Rendering ---
   function showScreen() {
     if (!apiKey) {
@@ -228,6 +286,7 @@
       if (channels.length === 0) {
         emptyState.classList.remove('hidden');
         videoGrid.classList.add('hidden');
+        tagFilterBar.classList.add('hidden');
       } else {
         emptyState.classList.add('hidden');
         videoGrid.classList.remove('hidden');
@@ -236,10 +295,17 @@
   }
 
   function renderVideoCard(video) {
+    const isWatched = watchedIds.has(video.id);
     const card = document.createElement('article');
     card.className = 'video-card';
     card.setAttribute('role', 'link');
     card.setAttribute('tabindex', '0');
+
+    // Checkmark SVG for watched button
+    const checkSvg = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>`;
+    // Undo SVG for unwatched button
+    const undoSvg = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12.5 8c-2.65 0-5.05 1-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"/></svg>`;
+
     card.innerHTML = `
       <div class="video-thumb-container">
         <img src="${video.thumbnail}" alt="" loading="lazy">
@@ -252,16 +318,36 @@
           <div class="video-channel">${escapeHtml(video.channelTitle)}</div>
           <div class="video-stats">${formatViewCount(video.viewCount)} · ${formatTimeAgo(video.publishedAt)}</div>
         </div>
+        <div class="video-actions">
+          <button class="watched-btn ${isWatched ? 'is-watched' : ''}" title="${isWatched ? 'Mark as unwatched' : 'Mark as watched'}">
+            ${isWatched ? undoSvg : checkSvg}
+          </button>
+        </div>
       </div>
     `;
-    card.addEventListener('click', () => {
+
+    // Open video on click (but not on the watched button)
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.watched-btn')) return;
       window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank');
     });
     card.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' && !e.target.closest('.watched-btn')) {
         window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank');
       }
     });
+
+    // Watched toggle
+    card.querySelector('.watched-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (isWatched) {
+        markUnwatched(video.id);
+      } else {
+        markWatched(video.id);
+      }
+      applyFiltersAndRender();
+    });
+
     return card;
   }
 
@@ -271,15 +357,51 @@
     return div.innerHTML;
   }
 
+  function applyFiltersAndRender() {
+    let videos = [...cachedVideos];
+
+    // Shorts filter (under 5 minutes)
+    if (filterShorts) {
+      videos = videos.filter((v) => v.durationSeconds >= 300);
+    }
+
+    // Tag filter
+    const allowedChannelIds = getChannelIdsByTag(activeTag);
+    if (allowedChannelIds) {
+      videos = videos.filter((v) => allowedChannelIds.has(v.channelId));
+    }
+
+    // Tab filter (new vs watched)
+    if (activeTab === 'new') {
+      videos = videos.filter((v) => !watchedIds.has(v.id));
+    } else {
+      videos = videos.filter((v) => watchedIds.has(v.id));
+    }
+
+    renderFeed(videos);
+  }
+
   function renderFeed(videos) {
     videoGrid.innerHTML = '';
-    if (videos.length === 0) {
+    if (videos.length === 0 && channels.length === 0) {
       emptyState.classList.remove('hidden');
       videoGrid.classList.add('hidden');
       return;
     }
     emptyState.classList.add('hidden');
     videoGrid.classList.remove('hidden');
+
+    if (videos.length === 0) {
+      const msg = document.createElement('div');
+      msg.className = 'no-results';
+      msg.textContent =
+        activeTab === 'watched'
+          ? 'No watched videos yet. Tap the checkmark on a video to mark it as watched.'
+          : 'No new videos to show.';
+      videoGrid.appendChild(msg);
+      return;
+    }
+
     videos.forEach((v) => videoGrid.appendChild(renderVideoCard(v)));
   }
 
@@ -292,13 +414,11 @@
     // Check cache (5 minutes)
     if (useCache) {
       const cacheTime = load(STORAGE_KEYS.CACHE_TIME, 0);
-      const cachedVideos = load(STORAGE_KEYS.VIDEO_CACHE, null);
-      if (cachedVideos && Date.now() - cacheTime < 5 * 60 * 1000) {
-        let videos = cachedVideos;
-        if (filterShorts) {
-          videos = videos.filter((v) => v.durationSeconds >= 60);
-        }
-        renderFeed(videos);
+      const cached = load(STORAGE_KEYS.VIDEO_CACHE, null);
+      if (cached && Date.now() - cacheTime < 5 * 60 * 1000) {
+        cachedVideos = cached;
+        renderTagFilterBar();
+        applyFiltersAndRender();
         return;
       }
     }
@@ -319,15 +439,12 @@
       );
 
       // Cache the unfiltered results
+      cachedVideos = allVideos;
       store(STORAGE_KEYS.VIDEO_CACHE, allVideos);
       store(STORAGE_KEYS.CACHE_TIME, Date.now());
 
-      // Apply shorts filter
-      if (filterShorts) {
-        allVideos = allVideos.filter((v) => v.durationSeconds >= 60);
-      }
-
-      renderFeed(allVideos);
+      renderTagFilterBar();
+      applyFiltersAndRender();
     } catch (err) {
       showToast(`Failed to load feed: ${err.message}`);
     } finally {
@@ -345,19 +462,78 @@
     channels.forEach((ch) => {
       const item = document.createElement('div');
       item.className = 'channel-item';
-      item.innerHTML = `
+
+      // Main row: avatar + name + remove
+      const mainRow = `
         <img src="${ch.thumbnail}" alt="">
         <span class="channel-item-name">${escapeHtml(ch.title)}</span>
         <button class="channel-remove-btn" title="Remove channel">&times;</button>
       `;
+
+      // Tags row
+      const tags = ch.tags || [];
+      let tagsHtml = '<div class="channel-tags-row">';
+      tags.forEach((tag) => {
+        tagsHtml += `<span class="channel-tag">${escapeHtml(tag)}<button class="tag-remove" data-tag="${escapeHtml(tag)}">&times;</button></span>`;
+      });
+      tagsHtml += `<button class="channel-tag-add-btn">+ tag</button>`;
+      tagsHtml += '</div>';
+
+      item.innerHTML = mainRow + tagsHtml;
+
+      // Remove channel
       item.querySelector('.channel-remove-btn').addEventListener('click', () => {
         removeChannel(ch.id);
       });
+
+      // Remove individual tag
+      item.querySelectorAll('.tag-remove').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const tag = btn.dataset.tag;
+          ch.tags = (ch.tags || []).filter((t) => t !== tag);
+          store(STORAGE_KEYS.CHANNELS, channels);
+          renderChannelList();
+          renderTagFilterBar();
+          applyFiltersAndRender();
+        });
+      });
+
+      // Add tag button
+      item.querySelector('.channel-tag-add-btn').addEventListener('click', (e) => {
+        const addBtn = e.target;
+        const row = addBtn.closest('.channel-tags-row');
+        addBtn.classList.add('hidden');
+
+        const input = document.createElement('input');
+        input.className = 'channel-tag-inline-input';
+        input.placeholder = 'tag name';
+        row.appendChild(input);
+        input.focus();
+
+        const commitTag = () => {
+          const tag = input.value.trim().toLowerCase();
+          if (tag && !(ch.tags || []).includes(tag)) {
+            ch.tags = [...(ch.tags || []), tag];
+            store(STORAGE_KEYS.CHANNELS, channels);
+            renderTagFilterBar();
+            applyFiltersAndRender();
+          }
+          renderChannelList();
+        };
+
+        input.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter') commitTag();
+          if (ev.key === 'Escape') renderChannelList();
+        });
+        input.addEventListener('blur', commitTag);
+      });
+
       channelList.appendChild(item);
     });
   }
 
-  function addChannel(channelData) {
+  function addChannel(channelData, tags) {
     if (channels.some((c) => c.id === channelData.id)) {
       showToast('Channel already added');
       return false;
@@ -368,9 +544,11 @@
       thumbnail: channelData.snippet.thumbnails.default?.url || '',
       uploadsPlaylistId:
         channelData.contentDetails.relatedPlaylists.uploads,
+      tags: tags || [],
     };
     channels.push(ch);
     store(STORAGE_KEYS.CHANNELS, channels);
+    renderTagFilterBar();
     showToast(`Added ${ch.title}`);
     return true;
   }
@@ -382,8 +560,10 @@
     store(STORAGE_KEYS.VIDEO_CACHE, null);
     store(STORAGE_KEYS.CACHE_TIME, 0);
     renderChannelList();
+    renderTagFilterBar();
     if (ch) showToast(`Removed ${ch.title}`);
     if (channels.length === 0) {
+      cachedVideos = [];
       showScreen();
     }
   }
@@ -465,7 +645,17 @@
     filterShortsToggle.addEventListener('change', () => {
       filterShorts = filterShortsToggle.checked;
       store(STORAGE_KEYS.FILTER_SHORTS, filterShorts);
-      loadFeed(true); // Reload from cache with new filter
+      applyFiltersAndRender();
+    });
+
+    // Tab switching
+    document.querySelectorAll('.tab').forEach((tab) => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        activeTab = tab.dataset.tab;
+        applyFiltersAndRender();
+      });
     });
 
     // Refresh
@@ -509,6 +699,9 @@
         channelResults.innerHTML = '';
         results.forEach((ch) => {
           const isAdded = channels.some((c) => c.id === ch.id);
+          const wrapper = document.createElement('div');
+
+          // Channel result row
           const div = document.createElement('div');
           div.className = 'channel-result';
           div.innerHTML = `
@@ -519,20 +712,49 @@
             </div>
             <button class="add-btn ${isAdded ? 'added' : ''}">${isAdded ? 'Added' : 'Add'}</button>
           `;
+          wrapper.appendChild(div);
+
+          // Tag input row (shown after clicking Add)
+          const tagRow = document.createElement('div');
+          tagRow.className = 'channel-tag-input hidden';
+          tagRow.innerHTML = `
+            <input type="text" placeholder="Tags (comma-separated, optional)">
+            <button>Save</button>
+          `;
+          wrapper.appendChild(tagRow);
+
           const btn = div.querySelector('.add-btn');
           if (!isAdded) {
             btn.addEventListener('click', (e) => {
               e.stopPropagation();
-              const added = addChannel(ch);
-              if (added) {
-                btn.textContent = 'Added';
-                btn.classList.add('added');
-                // Reload feed in background
-                loadFeed(false);
-              }
+              // Show tag input
+              tagRow.classList.remove('hidden');
+              btn.textContent = 'Adding...';
+              btn.classList.add('added');
+              const tagInput = tagRow.querySelector('input');
+              tagInput.focus();
+
+              const doAdd = () => {
+                const rawTags = tagInput.value
+                  .split(',')
+                  .map((t) => t.trim().toLowerCase())
+                  .filter(Boolean);
+                const added = addChannel(ch, rawTags);
+                if (added) {
+                  btn.textContent = 'Added';
+                  tagRow.classList.add('hidden');
+                  loadFeed(false);
+                }
+              };
+
+              tagRow.querySelector('button').addEventListener('click', doAdd);
+              tagInput.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') doAdd();
+              });
             });
           }
-          channelResults.appendChild(div);
+
+          channelResults.appendChild(wrapper);
         });
       } catch (err) {
         channelResults.innerHTML = `<p class="search-status">Error: ${escapeHtml(err.message)}</p>`;
@@ -556,6 +778,7 @@
     // Initial render
     showScreen();
     if (apiKey && channels.length > 0) {
+      renderTagFilterBar();
       loadFeed(true);
     }
   }
