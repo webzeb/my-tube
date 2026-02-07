@@ -326,14 +326,14 @@
       </div>
     `;
 
-    // Open video on click (but not on the watched button)
+    // Open video in inline player (and auto-mark watched)
     card.addEventListener('click', (e) => {
       if (e.target.closest('.watched-btn')) return;
-      window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank');
+      openPlayer(video);
     });
     card.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.target.closest('.watched-btn')) {
-        window.open(`https://www.youtube.com/watch?v=${video.id}`, '_blank');
+        openPlayer(video);
       }
     });
 
@@ -600,6 +600,38 @@
     });
   }
 
+  // --- Video Player ---
+  const videoPlayer = $('#video-player');
+  const playerIframeWrap = $('#player-iframe-wrap');
+  const playerTitle = $('#player-title');
+  const playerChannel = $('#player-channel');
+
+  function openPlayer(video) {
+    // Mark as watched
+    if (!watchedIds.has(video.id)) {
+      markWatched(video.id);
+    }
+
+    playerTitle.textContent = video.title;
+    playerChannel.textContent = video.channelTitle;
+    playerIframeWrap.innerHTML = `<iframe
+      src="https://www.youtube-nocookie.com/embed/${video.id}?autoplay=1&playsinline=1&rel=0"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowfullscreen
+    ></iframe>`;
+
+    videoPlayer.classList.remove('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closePlayer() {
+    playerIframeWrap.innerHTML = '';
+    videoPlayer.classList.add('hidden');
+    document.body.style.overflow = '';
+    // Re-render to reflect any watched state changes
+    applyFiltersAndRender();
+  }
+
   // --- Sync / Export / Import ---
   function getSettingsPayload() {
     return {
@@ -769,6 +801,9 @@
       }
     });
 
+    // Video player close
+    $('#player-close').addEventListener('click', closePlayer);
+
     // Tab switching
     document.querySelectorAll('.tab').forEach((tab) => {
       tab.addEventListener('click', () => {
@@ -889,9 +924,11 @@
     // Keyboard escape
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        if (!addChannelModal.classList.contains('hidden'))
+        if (!videoPlayer.classList.contains('hidden'))
+          closePlayer();
+        else if (!addChannelModal.classList.contains('hidden'))
           closeModal(addChannelModal);
-        if (!settingsModal.classList.contains('hidden'))
+        else if (!settingsModal.classList.contains('hidden'))
           closeModal(settingsModal);
       }
     });
