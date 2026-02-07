@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0f0f0f">
+  <title>MyTube</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📺</text></svg>">
+</head>
+<body>
+  <div id="app">
+    <!-- Header -->
+    <header id="header">
+      <h1>MyTube</h1>
+      <div class="header-actions">
+        <button id="refresh-btn" class="icon-btn" title="Refresh feed">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/>
+          </svg>
+        </button>
+        <button id="settings-btn" class="icon-btn" title="Settings">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Setup screen (shown when no API key) -->
+    <div id="setup-screen" class="screen hidden">
+      <div class="setup-container">
+        <div class="setup-icon">📺</div>
+        <h2>Welcome to MyTube</h2>
+        <p>Your personal, distraction-free YouTube feed. Only videos from channels you choose — no Shorts, no recommendations, no algorithm.</p>
+        <div class="setup-step">
+          <h3>Get a YouTube API Key</h3>
+          <ol>
+            <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Google Cloud Console</a></li>
+            <li>Create a project (or select an existing one)</li>
+            <li>Enable the <strong>YouTube Data API v3</strong></li>
+            <li>Create an <strong>API Key</strong> under Credentials</li>
+            <li>Paste it below</li>
+          </ol>
+        </div>
+        <div class="input-group">
+          <input type="text" id="setup-api-key" placeholder="Paste your YouTube API key here">
+          <button id="setup-save-btn" class="primary-btn">Get Started</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main feed screen -->
+    <div id="feed-screen" class="screen hidden">
+      <!-- Empty state -->
+      <div id="empty-state" class="empty-state hidden">
+        <div class="empty-icon">📡</div>
+        <h2>No channels yet</h2>
+        <p>Add some YouTube channels to start building your feed.</p>
+        <button id="empty-add-btn" class="primary-btn">Add a Channel</button>
+      </div>
+
+      <!-- Loading state -->
+      <div id="loading-state" class="loading-state hidden">
+        <div class="spinner"></div>
+        <p>Loading your feed...</p>
+      </div>
+
+      <!-- Video grid -->
+      <div id="video-grid" class="video-grid"></div>
+
+      <!-- Floating add button -->
+      <button id="fab-add" class="fab" title="Add channel">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor">
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Add Channel Modal -->
+    <div id="add-channel-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Add Channel</h2>
+          <button class="modal-close icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Enter a YouTube channel URL, handle (@username), or channel name.</p>
+          <div class="input-group">
+            <input type="text" id="channel-input" placeholder="e.g. @mkbhd or channel URL">
+            <button id="channel-search-btn" class="primary-btn">Search</button>
+          </div>
+          <div id="channel-results" class="channel-results"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal hidden">
+      <div class="modal-backdrop"></div>
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Settings</h2>
+          <button class="modal-close icon-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <section class="settings-section">
+            <h3>API Key</h3>
+            <div class="input-group">
+              <input type="text" id="settings-api-key" placeholder="YouTube API Key">
+              <button id="settings-save-key" class="primary-btn">Save</button>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Filter Shorts</h3>
+            <label class="toggle-label">
+              <span>Hide videos under 60 seconds</span>
+              <input type="checkbox" id="filter-shorts" checked>
+              <span class="toggle-slider"></span>
+            </label>
+          </section>
+
+          <section class="settings-section">
+            <h3>Your Channels</h3>
+            <div id="channel-list" class="channel-list"></div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
